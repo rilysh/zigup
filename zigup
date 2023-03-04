@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+
+set -e
+
+RELEASE_INDEX="https://ziglang.org/download/index.json"
+FILE=${RELEASE_INDEX##*/}
+ARCH=$(uname -m)
+ZIG_FOLDR="$HOME/zig"
+
+# Download using curl or wget (depends which one is installed)
+function dler() {
+    local EFOLDER
+    EFOLDER=$( (find -- *xz* 2>/dev/null) | sed 's/.tar.*//g' )
+    rm -rf "$EFOLDER.tar.xz"
+
+    if [ "$(command -v curl)" ]; then
+        curl -LO "$1"
+    elif [ "$(command -v wget)" ]; then
+        wget "$1"
+    else
+        echo "Error: No downloader utility found, please install curl or wget."
+        exit 1
+    fi
+}
+
+# Setup the downloaded archive 
+function setup() {
+    local EFOLDER
+    EFOLDER=$( (find -- *xz* 2>/dev/null) | sed 's/.tar.*//g' )
+    [ ! -d "$1" ] && {
+        mkdir "$1"
+    }
+    tar xvf "$2"
+    mv "$EFOLDER" "$ZIG_FOLDR"
+    rm -f "$EFOLDER.tar.xz"
+}
+
+# Main function
+function main() {
+    local LIST_PREV_BUILDS
+    local FIND_DEV_BUILD
+    local FIND_PREV_BUILD
+
+    [ ! -f "$FILE" ] && {
+        # As silencing, this will also prevent showing any error may happen
+        # when trying to create the HTTP request
+        dler "$RELEASE_INDEX" &> /dev/null
+    }
+
+    LIST_PREV_BUILDS=$(
+        grep "zig-linux-$ARCH" "$FILE" |
+        sed -E "s/://;s/tarball|[\",]|[[:space:]]//g;s/https:[//^]|ziglang[.]org[/]|download[/]|[/]|builds|zig-linux-.*//g" |
+        tail -n +2
+    )
+    [ "$1" == "--list-previous" ] && {
+        echo "List of previous Zig builds"
+        echo "---------------------------"
+        echo "$LIST_PREV_BUILDS"
+        exit 0
+    }
+
+    FIND_DEV_BUILD=$(
+        grep -m 1 "zig-linux-$ARCH" "$FILE" |
+        sed -E "s/://;s/tarball|[\",]|[[:space:]]//g"
+    )
+    FIND_PREV_BUILD=$(
+        grep "zig-linux-$ARCH" "$FILE" |
+        sed -E "s/://;s/tarball|[\",]|[[:space:]]//g" | grep "$1"
+    )
+    if [ -z "$1" ]; then
+        dler "$FIND_DEV_BUILD"
+        setup "$ZIG_FOLDR" "${FIND_DEV_BUILD##*/}"
+    else
+        dler "$FIND_PREV_BUILD"
+        setup "$ZIG_FOLDR" "${FIND_PREV_BUILD##*/}"
+    fi
+}
+
+main "$@"
